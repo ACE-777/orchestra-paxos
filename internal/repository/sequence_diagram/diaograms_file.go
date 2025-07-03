@@ -6,6 +6,8 @@ import (
 	"sync"
 )
 
+var mu sync.Mutex
+
 func CreateNewFile(paxosType string) {
 	err := os.WriteFile(fmt.Sprintf("./artifacts/%s-paxos-output.txt", paxosType), []byte("sequenceDiagram\n"), 0755)
 	if err != nil {
@@ -13,12 +15,13 @@ func CreateNewFile(paxosType string) {
 	}
 }
 
-var mu sync.Mutex
-
 func WriteToFile(text string) {
+	mu.Lock()
+	defer mu.Unlock()
+
 	file, err := os.OpenFile("./artifacts/multi-paxos-output.txt", os.O_APPEND|os.O_WRONLY, os.ModeAppend)
 	if err != nil {
-		fmt.Printf("Can't write error: %v", err)
+		//fmt.Printf("Can't write error: %v", err)
 		return
 	}
 	defer file.Close()

@@ -1,7 +1,7 @@
 package usecases
 
 import (
-	"orchestra-paxos/internal/domain/roles"
+	roles "orchestra-paxos/internal/domain/roles"
 )
 
 type AcceptorsStorage interface {
@@ -9,8 +9,14 @@ type AcceptorsStorage interface {
 	NumberOfAcceptorsAtRound(roundID roles.HighestID) int
 	AllAcceptorsAtRound(roundID roles.HighestID) []string
 }
+
 type Timers interface {
 	CheckExpireTimer(operationID roles.HighestID) bool
 	SetExpireTimer(operationID roles.HighestID)
 	InitExpireTimer(operationID roles.HighestID)
+}
+
+type ValuesFromUsers interface {
+	AddValue(value string, operationID roles.HighestID)
+	ValueFromRound(operationID roles.HighestID) string
 }

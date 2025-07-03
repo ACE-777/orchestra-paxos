@@ -3,17 +3,18 @@ package timers
 import (
 	"sync"
 
-	"orchestra-paxos/internal/domain/roles"
+	roles "orchestra-paxos/internal/domain/roles"
 )
 
 type TimersOfCollectingPrepareFromAcceptors struct {
 	timers map[roles.HighestID]bool
-	lock   sync.Mutex
+	lock   *sync.Mutex
 }
 
 func NewTimersOfCollectingPrepareFromAcceptors() *TimersOfCollectingPrepareFromAcceptors {
 	return &TimersOfCollectingPrepareFromAcceptors{
 		timers: make(map[roles.HighestID]bool),
+		lock:   &sync.Mutex{},
 	}
 }
 

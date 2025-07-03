@@ -3,17 +3,18 @@ package values
 import (
 	"sync"
 
-	"orchestra-paxos/internal/domain/roles"
+	roles "orchestra-paxos/internal/domain/roles"
 )
 
 type ValuesFromUser struct {
 	values map[roles.HighestID]string
-	lock   sync.Mutex
+	lock   *sync.Mutex
 }
 
 func NewValuesFromUser() *ValuesFromUser {
 	return &ValuesFromUser{
 		values: make(map[roles.HighestID]string),
+		lock:   &sync.Mutex{},
 	}
 }
 

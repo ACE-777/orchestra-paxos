@@ -23,24 +23,29 @@ type Proposer struct {
 	GroupID   domain_roles.GroupID   // group's ID of nodes
 	NodeID    domain_roles.NodeID    // Proposer's ID
 	HighestID domain_roles.HighestID // highest ID of proposal in each round
-	Acceptors map[string]bool        // all acceptors in system
+	Acceptors map[string]struct{}    // all acceptors in system, map for randomize sending (emulate network latency)
 
 	aliveAcceptors                         interface_uc.AcceptorsStorage      // alive acceptors in round
 	acceptedAcceptors                      interface_uc.AcceptorsStorage      // acceptors that accept proposal in round
 	logOfOperations                        *operations_log_uc.LogOfOperations // marking that some round may can be restored
 	timersOfCollectingPrepareFromAcceptors interface_uc.Timers                // mark that timer expired in prepare stage
 	timersOfCollectingAcceptFromAcceptors  interface_uc.Timers                // mark that timer expired in prepare stage
-	valuesFromUser                         *values_uc.ValuesFromUser          // values from user for each round
+	valuesFromUser                         interface_uc.ValuesFromUsers       // values from user for each round
 
-	Net  network.NetworkActions // network
-	lock sync.Mutex             // mutex
+	Net   network.NetworkActions // network
+	lock  *sync.Mutex            // mutex
+	logMu *sync.Mutex            // mutex for log
 }
 
-func NewProposer(groupID domain_roles.GroupID, nodeID domain_roles.NodeID, network network.NetworkActions) *Proposer {
+func NewProposer(
+	groupID domain_roles.GroupID,
+	nodeID domain_roles.NodeID,
+	network network.NetworkActions,
+) *Proposer {
 	return &Proposer{
 		GroupID:                                groupID,
 		NodeID:                                 nodeID,
-		Acceptors:                              make(map[string]bool),
+		Acceptors:                              make(map[string]struct{}),
 		aliveAcceptors:                         storage_uc.NewAliveAcceptors(),
 		acceptedAcceptors:                      storage_uc.NewAcceptedAcceptors(),
 		logOfOperations:                        operations_log_uc.NewLogOfOperations(),
@@ -48,6 +53,8 @@ func NewProposer(groupID domain_roles.GroupID, nodeID domain_roles.NodeID, netwo
 		timersOfCollectingAcceptFromAcceptors:  timers_uc.NewTimersOfCollectingAcceptFromAcceptors(),
 		valuesFromUser:                         values_uc.NewValuesFromUser(),
 		Net:                                    network,
+		lock:                                   &sync.Mutex{},
+		logMu:                                  &sync.Mutex{},
 	}
 }
 
@@ -59,7 +66,7 @@ func (p *Proposer) handleRequest(message domain_network.NetworkMessage) {
 
 	msg, ok := message.Data.(domain_network.MessageRequest)
 	if !ok {
-		p.log("can not convert message to valid value")
+		p.log(0, "can not convert message to valid value")
 
 		return
 	}
@@ -78,26 +85,102 @@ func (p *Proposer) handleRequest(message domain_network.NetworkMessage) {
 	}
 
 	for acceptor := range p.Acceptors {
-		p.log("proposer %s send Prepare to acceptor %s", p.Name(), acceptor)
+		p.log(roundID, "proposer %s send Prepare to acceptor %s", p.Name(), acceptor)
 	}
 
 	p.timersOfCollectingPrepareFromAcceptors.InitExpireTimer(roundID)
-	go func() {
-		roundID := roundID
+	p.sendAccept(roundID, msg)
+}
+
+func (p *Proposer) handlePromise(message domain_network.NetworkMessage) {
+	msg, ok := message.Data.(domain_network.MessagePromise)
+	if !ok {
+		p.log(0, "can not convert message to valid value")
+
+		return
+	}
+
+	if p.logOfOperations.CheckOperationOnRestartState(msg.ProposalID) {
+		return
+	}
+
+	if !p.timersOfCollectingPrepareFromAcceptors.CheckExpireTimer(msg.ProposalID) {
+		p.aliveAcceptors.AddAcceptor(message.Sender, msg.ProposalID)
+	}
+}
+
+func (p *Proposer) handleAccepted(message domain_network.NetworkMessage) {
+	msg, ok := message.Data.(domain_network.MessageAccept)
+	if !ok {
+		p.log(0, "can not convert message to valid value")
+
+		return
+	}
+
+	if p.logOfOperations.CheckOperationOnRestartState(msg.ProposalID) {
+		return
+	}
+
+	if !p.timersOfCollectingAcceptFromAcceptors.CheckExpireTimer(msg.ProposalID) {
+		p.acceptedAcceptors.AddAcceptor(message.Sender, msg.ProposalID)
+	}
+}
+
+func (p *Proposer) handleNack(message domain_network.NetworkMessage) {
+	msg, ok := message.Data.(domain_network.MessageNack)
+	if !ok {
+		p.log(0, "can not convert message to valid value")
+
+		return
+	}
+
+	if p.logOfOperations.CheckOperationOnRestartState(msg.ProposalID) {
+		return
+	}
+
+	p.lock.Lock()
+	if msg.AcceptorID > p.HighestID {
+		p.HighestID = msg.AcceptorID
+	}
+	p.lock.Unlock()
+
+	p.logOfOperations.SetRestartStateOperation(msg.ProposalID)
+	source := rand.NewSource(time.Now().UnixNano())
+	r := rand.New(source)
+	randomTimeout := time.Duration(r.Intn(500)+1000) * time.Microsecond
+	fmt.Printf("Sleeping %d microseconds before restarting round\n", randomTimeout)
+	time.Sleep(randomTimeout)
+	p.handleRequest(domain_network.NetworkMessage{
+		Stage:  domain_roles.REQUEST,
+		Sender: p.Name(),
+		Data: domain_network.MessageRequest{
+			Value:   p.valuesFromUser.ValueFromRound(msg.ProposalID),
+			Restart: "restart",
+		},
+	})
+
+	p.log(msg.ProposalID, "restart round")
+}
+
+func (p *Proposer) sendAccept(roundID domain_roles.HighestID, msg domain_network.MessageRequest) {
+	go func(roundID domain_roles.HighestID) {
 		ticker := time.NewTicker(20 * time.Microsecond)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
 				if p.logOfOperations.CheckOperationOnRestartState(roundID) {
-					sequence_diagram.WriteToFile(fmt.Sprintf("Note left of Proposer %d: round %d restarted", p.NodeID, roundID))
+					sequence_diagram.WriteToFile(
+						fmt.Sprintf("Note left of Proposer %d: round %d restarted", p.NodeID, roundID),
+					)
+
 					return
 				}
 
 				p.timersOfCollectingPrepareFromAcceptors.SetExpireTimer(roundID)
 				//sequence_diagram.WriteToFile(fmt.Sprintf("participant client\n==%s==", "timer Prepare expired"))
 				sequence_diagram.WriteToFile(fmt.Sprintf("Note left of Proposer %d: %s", p.NodeID, "timer Prepare expired"))
-				p.log("timer Prepare expired")
+				p.log(roundID, "timer Prepare expired")
 
 				msgAccept := domain_network.MessageAccept{
 					ProposalID:     roundID,
@@ -115,157 +198,97 @@ func (p *Proposer) handleRequest(message domain_network.NetworkMessage) {
 				}
 
 				for _, acceptor := range p.aliveAcceptors.AllAcceptorsAtRound(roundID) {
-					p.log("proposer %s send ACCEPT to acceptor %s", p.Name(), acceptor)
+					p.log(roundID, "proposer %s send ACCEPT to acceptor %s", p.Name(), acceptor)
 				}
 
-				go func() {
-					roundID := roundID
-					ticker1 := time.NewTicker(20 * time.Microsecond)
-					defer ticker1.Stop()
-					for {
-						select {
-						case <-ticker1.C:
-							if p.logOfOperations.CheckOperationOnRestartState(roundID) {
-								sequence_diagram.WriteToFile(fmt.Sprintf("Note left of Proposer %d: round %d restarted", p.NodeID, roundID))
-								return
-							}
-
-							p.timersOfCollectingAcceptFromAcceptors.SetExpireTimer(roundID)
-							p.log("timer Accept expired")
-							//sequence_diagram.WriteToFile(fmt.Sprintf("participant client\n==%s==", "timer Accept expired"))
-							sequence_diagram.WriteToFile(fmt.Sprintf("Note left of Proposer %d: %s", p.NodeID, "timer Accept expired"))
-							if p.acceptedAcceptors.NumberOfAcceptorsAtRound(roundID) > p.aliveAcceptors.NumberOfAcceptorsAtRound(roundID)/2 {
-								sequence_diagram.WriteToFile(fmt.Sprintf("Proposer %d-->> client: %s was accepted as the value!", p.NodeID, p.valuesFromUser.ValueFromRound(roundID)))
-								p.log("!!!!!  value %s was accepted, proposer %s ::: %d > %d", msg.Value, p.Name(), p.acceptedAcceptors.NumberOfAcceptorsAtRound(roundID), p.aliveAcceptors.NumberOfAcceptorsAtRound(roundID)/2)
-
-								return
-							}
-
-							p.logOfOperations.SetRestartStateOperation(roundID)
-							source := rand.NewSource(time.Now().UnixNano())
-							r := rand.New(source)
-							randomTimeout := time.Duration(r.Intn(500)+1) * time.Microsecond
-							time.Sleep(randomTimeout)
-							fmt.Printf("Sleeping %d microseconds...\n", randomTimeout)
-							p.handleRequest(domain_network.NetworkMessage{
-								Stage:  domain_roles.REQUEST,
-								Sender: p.Name(),
-								Data: domain_network.MessageRequest{
-									Value:   p.valuesFromUser.ValueFromRound(roundID),
-									Restart: "restart",
-								},
-							})
-
-							p.log("restart round")
-
-							return
-						default:
-							if p.acceptedAcceptors.NumberOfAcceptorsAtRound(roundID) > p.aliveAcceptors.NumberOfAcceptorsAtRound(roundID)/2 {
-								sequence_diagram.WriteToFile(fmt.Sprintf("Proposer %d-->> client: %s was accepted as the value!", p.NodeID, p.valuesFromUser.ValueFromRound(roundID)))
-								p.log("!!!!!  value %s was accepted, proposer %s ::: %d > %d", msg.Value, p.Name(), p.acceptedAcceptors.NumberOfAcceptorsAtRound(roundID), p.aliveAcceptors.NumberOfAcceptorsAtRound(roundID)/2)
-
-								return
-							}
-
-							continue
-						}
-					}
-				}()
+				p.waitAccept(roundID, msg)
 
 				return
 			default:
 				if p.logOfOperations.CheckOperationOnRestartState(roundID) {
 					sequence_diagram.WriteToFile(fmt.Sprintf("Note left of Proposer %d: round %d restarted", p.NodeID, roundID))
+
 					return
 				}
 
 				continue
 			}
 		}
-	}()
+	}(roundID)
 }
 
-func (p *Proposer) handlePromise(message domain_network.NetworkMessage) {
-	msg, ok := message.Data.(domain_network.MessagePromise)
-	if !ok {
-		p.log("can not convert message to valid value")
+func (p *Proposer) waitAccept(roundID domain_roles.HighestID, msg domain_network.MessageRequest) {
+	go func(roundID domain_roles.HighestID) {
+		ticker1 := time.NewTicker(20 * time.Microsecond)
+		defer ticker1.Stop()
+		for {
+			select {
+			case <-ticker1.C:
+				if p.logOfOperations.CheckOperationOnRestartState(roundID) {
+					sequence_diagram.WriteToFile(fmt.Sprintf("Note left of Proposer %d: round %d restarted", p.NodeID, roundID))
 
-		return
-	}
+					return
+				}
 
-	if p.logOfOperations.CheckOperationOnRestartState(msg.ProposalID) {
-		return
-	}
+				p.timersOfCollectingAcceptFromAcceptors.SetExpireTimer(roundID)
+				p.log(roundID, "timer Accept expired")
+				//sequence_diagram.WriteToFile(fmt.Sprintf("participant client\n==%s==", "timer Accept expired"))
+				sequence_diagram.WriteToFile(fmt.Sprintf("Note left of Proposer %d: %s", p.NodeID, "timer Accept expired"))
+				if p.acceptedAcceptors.NumberOfAcceptorsAtRound(roundID) > p.aliveAcceptors.NumberOfAcceptorsAtRound(roundID)/2 {
+					sequence_diagram.WriteToFile(fmt.Sprintf("Proposer %d-->> client: %s was accepted as the value!", p.NodeID, p.valuesFromUser.ValueFromRound(roundID)))
+					p.log(roundID, "!!!!!  value %s was accepted, proposer %s ::: %d > %d", msg.Value, p.Name(), p.acceptedAcceptors.NumberOfAcceptorsAtRound(roundID), p.aliveAcceptors.NumberOfAcceptorsAtRound(roundID)/2)
 
-	if !p.timersOfCollectingPrepareFromAcceptors.CheckExpireTimer(msg.ProposalID) {
-		p.aliveAcceptors.AddAcceptor(message.Sender, msg.ProposalID)
-	}
+					return
+				}
+
+				p.logOfOperations.SetRestartStateOperation(roundID)
+				source := rand.NewSource(time.Now().UnixNano())
+				r := rand.New(source)
+				randomTimeout := time.Duration(r.Intn(500)+1000) * time.Microsecond
+				fmt.Printf("Sleeping %d microseconds before restarting round \n", randomTimeout)
+				time.Sleep(randomTimeout)
+
+				p.handleRequest(domain_network.NetworkMessage{
+					Stage:  domain_roles.REQUEST,
+					Sender: p.Name(),
+					Data: domain_network.MessageRequest{
+						Value:   p.valuesFromUser.ValueFromRound(roundID),
+						Restart: "restart",
+					},
+				})
+
+				p.log(roundID, "restart round")
+
+				return
+			default:
+				if p.acceptedAcceptors.NumberOfAcceptorsAtRound(roundID) > p.aliveAcceptors.NumberOfAcceptorsAtRound(roundID)/2 {
+					sequence_diagram.WriteToFile(fmt.Sprintf("Proposer %d-->> client: %s was accepted as the value!", p.NodeID, p.valuesFromUser.ValueFromRound(roundID)))
+					p.log(roundID, "!!!!!  value %s was accepted, proposer %s ::: %d > %d", msg.Value, p.Name(), p.acceptedAcceptors.NumberOfAcceptorsAtRound(roundID), p.aliveAcceptors.NumberOfAcceptorsAtRound(roundID)/2)
+
+					return
+				}
+
+				continue
+			}
+		}
+	}(roundID)
 }
 
-func (p *Proposer) handleAccepted(message domain_network.NetworkMessage) {
-	msg, ok := message.Data.(domain_network.MessageAccepted)
-	if !ok {
-		p.log("can not convert message to valid value")
-
-		return
-	}
-
-	if p.logOfOperations.CheckOperationOnRestartState(msg.ProposalID) {
-		return
-	}
-
-	if !p.timersOfCollectingAcceptFromAcceptors.CheckExpireTimer(msg.ProposalID) {
-		p.acceptedAcceptors.AddAcceptor(message.Sender, msg.ProposalID)
-	}
-}
-
-func (p *Proposer) handleNack(message domain_network.NetworkMessage) {
-	msg, ok := message.Data.(domain_network.MessageNack)
-	if !ok {
-		p.log("can not convert message to valid value")
-
-		return
-	}
-
-	if p.logOfOperations.CheckOperationOnRestartState(msg.ProposalID) {
-		return
-	}
-
-	if msg.AcceptorID > p.HighestID {
-		p.HighestID = msg.AcceptorID
-	}
-
-	p.logOfOperations.SetRestartStateOperation(msg.ProposalID)
-	source := rand.NewSource(time.Now().UnixNano())
-	r := rand.New(source)
-	randomTimeout := time.Duration(r.Intn(500)+1) * time.Microsecond
-	time.Sleep(randomTimeout)
-	fmt.Printf("Sleeping %d microseconds...\n", randomTimeout)
-	p.handleRequest(domain_network.NetworkMessage{
-		Stage:  domain_roles.REQUEST,
-		Sender: p.Name(),
-		Data: domain_network.MessageRequest{
-			Value:   p.valuesFromUser.ValueFromRound(msg.ProposalID),
-			Restart: "restart",
-		},
-	})
-
-	p.log("restart round")
-}
-
-func (p *Proposer) UpdateAcceptor(acceptors []string) {
+func (p *Proposer) UpdateListOfParticipantsOfTheRequiredRoles(acceptors []string) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
 	for _, acceptor := range acceptors {
-		p.Acceptors[acceptor] = true
+		p.Acceptors[acceptor] = struct{}{}
 	}
 }
 
 func (p *Proposer) Name() string {
-	return fmt.Sprintf("Proposer %d ", p.NodeID)
+	return fmt.Sprintf("Proposer %d", p.NodeID)
 }
 
-func (p *Proposer) log(format string, v ...any) {
-	log.Printf("[%d] %s", p.HighestID, fmt.Sprintf(format, v...))
+func (p *Proposer) log(proposerHighestID domain_roles.HighestID, format string, v ...any) {
+	p.logMu.Lock()
+	log.Printf("[%d] %s", proposerHighestID, fmt.Sprintf(format, v...))
+	p.logMu.Unlock()
 }

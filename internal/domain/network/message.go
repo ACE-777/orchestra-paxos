@@ -11,6 +11,8 @@ type NetworkMessage struct {
 	Data   interface{}
 }
 
+// MessageRequest identify Data in NetworkMessage for prepare state (client -> proposer) or in case of
+// refreshing the round
 type MessageRequest struct {
 	Value   string
 	Restart string
@@ -21,31 +23,22 @@ type MessagePrepare struct {
 	ProposalID roles.HighestID
 }
 
+// MessageNack identify Data in NetworkMessage for all stages in case of impossibility of continuing the algorithm
 type MessageNack struct {
 	ProposalID roles.HighestID
 	AcceptorID roles.HighestID
 }
 
-// MessageProposal identify Data in NetworkMessage for accept stage (proposer -> acceptor) or in case of already
-// accepted value from another proposer with same round ID (acceptor -> proposer)
+// MessagePromise identify Data in NetworkMessage for prepare stage (acceptor -> proposer)
 type MessagePromise struct {
 	ProposalID roles.HighestID
 	Value      string
 }
 
+// MessageAccept identify Data in NetworkMessage for accept stage
+// (between acceptor -> learner and then acceptor -> proposer)
 type MessageAccept struct {
 	ProposalID     roles.HighestID
 	Value          string
 	ALiveAcceptors []string
-}
-
-type MessageAccepted struct {
-	ProposalID     roles.HighestID
-	Value          string
-	ALiveAcceptors []string
-}
-
-// MessageLearn identify Data in NetworkMessage for broadcast decision of completed round (acceptor -> learner)
-type MessageLearn struct {
-	Value string
 }

@@ -8,49 +8,62 @@ import (
 	network "orchestra-paxos/internal/domain/network"
 )
 
-const MessageBuffer = 128
+const MessageBuffer = 1024
 
 type Network struct {
-	lock  sync.Mutex
 	chans map[string]chan network.NetworkMessage
 	loss  uint64
+	lock  *sync.RWMutex
 }
 
 func NewNetwork(loss uint64) *Network {
 	return &Network{
 		chans: make(map[string]chan network.NetworkMessage),
 		loss:  loss,
+		lock:  &sync.RWMutex{},
 	}
 }
 
-func (n *Network) Send(receiverID string, delay int64, message network.NetworkMessage) {
-	if delay != 0 {
-		time.Sleep(time.Duration(delay) * time.Nanosecond)
+func (n *Network) getChannel(receiverID string) chan network.NetworkMessage {
+	n.lock.RLock()
+	channel, exists := n.chans[receiverID]
+	n.lock.RUnlock()
+
+	if exists {
+		return channel
 	}
 
-	if rand.Uint64() < n.loss {
+	n.lock.Lock()
+	defer n.lock.Unlock()
+
+	if channel, exists = n.chans[receiverID]; exists {
+		return channel
+	}
+
+	newChannel := make(chan network.NetworkMessage, MessageBuffer)
+	n.chans[receiverID] = newChannel
+
+	return newChannel
+}
+
+func (n *Network) Send(receiverID string, delay time.Duration, message network.NetworkMessage) {
+	if delay != 0 {
+		time.Sleep(delay)
+	}
+
+	if rand.Uint64() <= n.loss {
 		//time.Sleep(time.Duration(n.loss) * time.Nanosecond)
 
 		return
 	}
-
-	n.lock.Lock()
-	if _, ok := n.chans[receiverID]; !ok {
-		n.chans[receiverID] = make(chan network.NetworkMessage, MessageBuffer)
-	}
-	n.lock.Unlock()
-
-	n.chans[receiverID] <- message
+	channel := n.getChannel(receiverID)
+	channel <- message
 }
 
 func (n *Network) Receive(receiverID string) network.NetworkMessage {
-	n.lock.Lock()
-	if _, ok := n.chans[receiverID]; !ok {
-		n.chans[receiverID] = make(chan network.NetworkMessage, MessageBuffer)
-	}
-	n.lock.Unlock()
+	channel := n.getChannel(receiverID)
+	msg := <-channel
+	//close(channel)
 
-	// add random delay for visualization
-	//time.Sleep(time.Duration(rand.Intn(1000)) * time.Millisecond)
-	return <-n.chans[receiverID]
+	return msg
 }

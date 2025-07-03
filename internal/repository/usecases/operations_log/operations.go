@@ -3,17 +3,18 @@ package operations_log
 import (
 	"sync"
 
-	"orchestra-paxos/internal/domain/roles"
+	roles "orchestra-paxos/internal/domain/roles"
 )
 
 type LogOfOperations struct {
 	logOfOperations map[roles.HighestID]struct{}
-	lock            sync.Mutex
+	lock            *sync.Mutex
 }
 
 func NewLogOfOperations() *LogOfOperations {
 	return &LogOfOperations{
 		logOfOperations: make(map[roles.HighestID]struct{}),
+		lock:            &sync.Mutex{},
 	}
 }
 

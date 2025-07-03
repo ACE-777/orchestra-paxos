@@ -3,17 +3,18 @@ package storage
 import (
 	"sync"
 
-	"orchestra-paxos/internal/domain/roles"
+	roles "orchestra-paxos/internal/domain/roles"
 )
 
 type AliveAcceptors struct {
 	acceptors map[roles.HighestID][]string
-	lock      sync.Mutex
+	lock      *sync.Mutex
 }
 
 func NewAliveAcceptors() *AliveAcceptors {
 	return &AliveAcceptors{
 		acceptors: make(map[roles.HighestID][]string),
+		lock:      &sync.Mutex{},
 	}
 }
 

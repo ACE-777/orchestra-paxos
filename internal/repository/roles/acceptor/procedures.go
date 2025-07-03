@@ -3,6 +3,7 @@ package acceptor
 import (
 	"fmt"
 	"log"
+	"sync"
 
 	domain_network "orchestra-paxos/internal/domain/network"
 	domain_roles "orchestra-paxos/internal/domain/roles"
@@ -15,23 +16,28 @@ type Acceptor struct {
 	NodeID  domain_roles.NodeID  // Acceptor's ID
 
 	HighestID domain_roles.HighestID // highest ID of proposal in each round
-	Learners  []string               // group of learners
+	Learners  map[string]struct{}    // group of learners, map for randomize sending (emulate network latency)
 
-	Net network.NetworkActions // network
+	Net   network.NetworkActions // network
+	lock  *sync.Mutex            // mutex
+	logMu *sync.Mutex            // mutex for log
 }
 
 func NewAcceptor(groupID domain_roles.GroupID, nodeID domain_roles.NodeID, net network.NetworkActions) *Acceptor {
 	return &Acceptor{
-		GroupID: groupID,
-		NodeID:  nodeID,
-		Net:     net,
+		GroupID:  groupID,
+		NodeID:   nodeID,
+		Learners: make(map[string]struct{}),
+		Net:      net,
+		lock:     &sync.Mutex{},
+		logMu:    &sync.Mutex{},
 	}
 }
 
 func (a *Acceptor) handlePrepare(message domain_network.NetworkMessage) {
 	msg, ok := message.Data.(domain_network.MessagePrepare)
 	if !ok {
-		a.log("can not convert message to valid value")
+		a.log(0, "can not convert message to valid value")
 
 		return
 	}
@@ -47,7 +53,7 @@ func (a *Acceptor) handlePrepare(message domain_network.NetworkMessage) {
 		})
 		sequence_diagram.WriteToFile(fmt.Sprintf("Acceptor %d--x %s:(%d) Nack", a.NodeID, message.Sender, a.HighestID))
 
-		a.log("acceptor %s send NACK to proposer %s", a.Name(), message.Sender)
+		a.log(a.HighestID, "acceptor %s send NACK to proposer %s", a.Name(), message.Sender)
 
 		return
 	}
@@ -69,13 +75,13 @@ func (a *Acceptor) handlePrepare(message domain_network.NetworkMessage) {
 	})
 	sequence_diagram.WriteToFile(fmt.Sprintf("Acceptor %d-->> %s:(%d) Promise", a.NodeID, message.Sender, a.HighestID))
 
-	a.log("acceptor %s send PROMISE to proposer %s", a.Name(), message.Sender)
+	a.log(msg.ProposalID, "acceptor %s send PROMISE to proposer %s", a.Name(), message.Sender)
 }
 
 func (a *Acceptor) handleAccept(message domain_network.NetworkMessage) {
 	msg, ok := message.Data.(domain_network.MessageAccept)
 	if !ok {
-		a.log("can not convert message to valid value")
+		a.log(0, "can not convert message to valid value")
 
 		return
 	}
@@ -91,16 +97,16 @@ func (a *Acceptor) handleAccept(message domain_network.NetworkMessage) {
 		})
 		sequence_diagram.WriteToFile(fmt.Sprintf("Acceptor %d--x %s:(%d) Nack", a.NodeID, message.Sender, a.HighestID))
 
-		a.log("acceptor %s send NACK to proposer %s", a.Name(), message.Sender)
+		a.log(a.HighestID, "acceptor %s send NACK to proposer %s", a.Name(), message.Sender)
 
 		return
 	}
 
-	for _, learner := range a.Learners {
+	for learner := range a.Learners {
 		a.Net.Send(learner, 0, domain_network.NetworkMessage{
 			Stage:  domain_roles.ACCEPTED,
 			Sender: a.Name(),
-			Data: domain_network.MessageAccepted{
+			Data: domain_network.MessageAccept{
 				ProposalID:     a.HighestID,
 				Value:          msg.Value,
 				ALiveAcceptors: msg.ALiveAcceptors,
@@ -110,31 +116,38 @@ func (a *Acceptor) handleAccept(message domain_network.NetworkMessage) {
 	}
 
 	for _, learner := range a.Learners {
-		a.log("acceptor %s send ACCEPTED to learner %s", a.Name(), learner)
+		a.log(a.HighestID, "acceptor %s send ACCEPTED to learner %s", a.Name(), learner)
 	}
 
 	sequence_diagram.WriteToFile(fmt.Sprintf("Acceptor %d-->> %s:(%d) Accepted: %s", a.NodeID, message.Sender, a.HighestID, msg.Value))
 	a.Net.Send(message.Sender, 0, domain_network.NetworkMessage{
 		Stage:  domain_roles.ACCEPTED,
 		Sender: a.Name(),
-		Data: domain_network.MessageAccepted{
+		Data: domain_network.MessageAccept{
 			ProposalID:     a.HighestID,
 			Value:          msg.Value,
 			ALiveAcceptors: msg.ALiveAcceptors,
 		},
 	})
 
-	a.log("acceptor %s send ACCEPTED to proposer %s", a.Name(), message.Sender)
+	a.log(a.HighestID, "acceptor %s send ACCEPTED to proposer %s", a.Name(), message.Sender)
 }
 
-func (a *Acceptor) UpdateLearners(learners []string) {
-	a.Learners = learners
+func (a *Acceptor) UpdateListOfParticipantsOfTheRequiredRoles(learners []string) {
+	a.lock.Lock()
+	defer a.lock.Unlock()
+
+	for _, acceptor := range learners {
+		a.Learners[acceptor] = struct{}{}
+	}
 }
 
 func (a *Acceptor) Name() string {
 	return fmt.Sprintf("Acceptor %d", a.NodeID)
 }
 
-func (a *Acceptor) log(format string, v ...any) {
-	log.Printf("[%d] %s", a.HighestID, fmt.Sprintf(format, v...))
+func (a *Acceptor) log(proposerHighestID domain_roles.HighestID, format string, v ...any) {
+	a.logMu.Lock()
+	log.Printf("[%d] %s", proposerHighestID, fmt.Sprintf(format, v...))
+	a.logMu.Unlock()
 }
