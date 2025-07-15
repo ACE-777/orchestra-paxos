@@ -1,1 +1,115 @@
 sequenceDiagram
+client ->> Proposer 9002: Request: ThirdValue
+client ->> Proposer 9000: Request: FirstValue
+client ->> Proposer 9001: Request: SecondValue
+Proposer 9000-->> Acceptor 9005:(1) Prepare
+Proposer 9001-->> Acceptor 9003:(1) Prepare
+Proposer 9002-->> Acceptor 9003:(1) Prepare
+Proposer 9002-->> Acceptor 9004:(1) Prepare
+Proposer 9000-->> Acceptor 9003:(1) Prepare
+Proposer 9001-->> Acceptor 9004:(1) Prepare
+Acceptor 9005-->> Proposer 9000:(1) Promise
+Proposer 9002-->> Acceptor 9005:(1) Prepare
+Acceptor 9003-->> Proposer 9001:(1) Promise
+Proposer 9000-->> Acceptor 9004:(1) Prepare
+Proposer 9001-->> Acceptor 9005:(1) Prepare
+Acceptor 9004-->> Proposer 9002:(1) Promise
+Acceptor 9005--x Proposer 9001:(1) Nack
+Acceptor 9003--x Proposer 9002:(1) Nack
+Note left of Proposer 9002: round 1 restarted
+Note left of Proposer 9001: round 1 restarted
+Acceptor 9004--x Proposer 9001:(1) Nack
+Acceptor 9005--x Proposer 9002:(1) Nack
+Acceptor 9003--x Proposer 9000:(1) Nack
+Note left of Proposer 9000: round 1 restarted
+Acceptor 9004--x Proposer 9000:(1) Nack
+Proposer 9000-->> Acceptor 9003:(2) Prepare
+Proposer 9000-->> Acceptor 9004:(2) Prepare
+Acceptor 9003-->> Proposer 9000:(2) Promise
+Proposer 9000-->> Acceptor 9005:(2) Prepare
+Acceptor 9004-->> Proposer 9000:(2) Promise
+Acceptor 9005-->> Proposer 9000:(2) Promise
+Proposer 9001-->> Acceptor 9003:(2) Prepare
+Proposer 9001-->> Acceptor 9004:(2) Prepare
+Proposer 9002-->> Acceptor 9004:(2) Prepare
+Proposer 9001-->> Acceptor 9005:(2) Prepare
+Acceptor 9003--x Proposer 9001:(2) Nack
+Proposer 9002-->> Acceptor 9005:(2) Prepare
+Acceptor 9004--x Proposer 9002:(2) Nack
+Proposer 9002-->> Acceptor 9003:(2) Prepare
+Note left of Proposer 9001: round 2 restarted
+Acceptor 9005--x Proposer 9001:(2) Nack
+Note left of Proposer 9002: round 2 restarted
+Acceptor 9004--x Proposer 9001:(2) Nack
+Acceptor 9003--x Proposer 9002:(2) Nack
+Acceptor 9005--x Proposer 9002:(2) Nack
+Note left of Proposer 9000: timer Prepare expired
+Proposer 9000-->> Acceptor 9003:(2) Accept: FirstValue
+Proposer 9000-->> Acceptor 9004:(2) Accept: FirstValue
+Acceptor 9003-->> Learner 9006:(2) Accepted: FirstValue
+Proposer 9000-->> Acceptor 9005:(2) Accept: FirstValue
+Acceptor 9003-->> Learner 9007:(2) Accepted: FirstValue
+Acceptor 9004-->> Learner 9006:(2) Accepted: FirstValue
+Acceptor 9005-->> Learner 9008:(2) Accepted: FirstValue
+Acceptor 9003-->> Learner 9008:(2) Accepted: FirstValue
+Acceptor 9004-->> Learner 9007:(2) Accepted: FirstValue
+Acceptor 9003-->> Proposer 9000:(2) Accepted: FirstValue
+Acceptor 9004-->> Learner 9008:(2) Accepted: FirstValue
+Acceptor 9005-->> Learner 9006:(2) Accepted: FirstValue
+Acceptor 9004-->> Proposer 9000:(2) Accepted: FirstValue
+Acceptor 9005-->> Learner 9007:(2) Accepted: FirstValue
+Acceptor 9005-->> Proposer 9000:(2) Accepted: FirstValue
+Proposer 9000-->> client: FirstValue was accepted as the value!
+Proposer 9001-->> Acceptor 9003:(3) Prepare
+Proposer 9001-->> Acceptor 9004:(3) Prepare
+Proposer 9001-->> Acceptor 9005:(3) Prepare
+Acceptor 9003-->> Proposer 9001:(3) Promise
+Acceptor 9004-->> Proposer 9001:(3) Promise
+Acceptor 9005-->> Proposer 9001:(3) Promise
+Proposer 9002-->> Acceptor 9003:(3) Prepare
+Proposer 9002-->> Acceptor 9004:(3) Prepare
+Proposer 9002-->> Acceptor 9005:(3) Prepare
+Acceptor 9003--x Proposer 9002:(3) Nack
+Acceptor 9004--x Proposer 9002:(3) Nack
+Acceptor 9005--x Proposer 9002:(3) Nack
+Note left of Proposer 9002: round 3 restarted
+Note left of Proposer 9001: timer Prepare expired
+Proposer 9001-->> Acceptor 9003:(3) Accept: SecondValue
+Proposer 9001-->> Acceptor 9004:(3) Accept: SecondValue
+Acceptor 9003-->> Learner 9006:(3) Accepted: SecondValue
+Proposer 9001-->> Acceptor 9005:(3) Accept: SecondValue
+Acceptor 9003-->> Learner 9007:(3) Accepted: SecondValue
+Acceptor 9004-->> Learner 9006:(3) Accepted: SecondValue
+Acceptor 9003-->> Learner 9008:(3) Accepted: SecondValue
+Acceptor 9003-->> Proposer 9001:(3) Accepted: SecondValue
+Acceptor 9005-->> Learner 9007:(3) Accepted: SecondValue
+Acceptor 9004-->> Learner 9007:(3) Accepted: SecondValue
+Acceptor 9004-->> Learner 9008:(3) Accepted: SecondValue
+Acceptor 9005-->> Learner 9008:(3) Accepted: SecondValue
+Acceptor 9004-->> Proposer 9001:(3) Accepted: SecondValue
+Acceptor 9005-->> Learner 9006:(3) Accepted: SecondValue
+Acceptor 9005-->> Proposer 9001:(3) Accepted: SecondValue
+Proposer 9001-->> client: SecondValue was accepted as the value!
+Proposer 9002-->> Acceptor 9005:(4) Prepare
+Proposer 9002-->> Acceptor 9003:(4) Prepare
+Proposer 9002-->> Acceptor 9004:(4) Prepare
+Acceptor 9005-->> Proposer 9002:(4) Promise
+Acceptor 9003-->> Proposer 9002:(4) Promise
+Acceptor 9004-->> Proposer 9002:(4) Promise
+Note left of Proposer 9002: timer Prepare expired
+Proposer 9002-->> Acceptor 9005:(4) Accept: ThirdValue
+Proposer 9002-->> Acceptor 9003:(4) Accept: ThirdValue
+Acceptor 9005-->> Learner 9008:(4) Accepted: ThirdValue
+Proposer 9002-->> Acceptor 9004:(4) Accept: ThirdValue
+Acceptor 9005-->> Learner 9006:(4) Accepted: ThirdValue
+Acceptor 9003-->> Learner 9006:(4) Accepted: ThirdValue
+Acceptor 9005-->> Learner 9007:(4) Accepted: ThirdValue
+Acceptor 9005-->> Proposer 9002:(4) Accepted: ThirdValue
+Acceptor 9004-->> Learner 9006:(4) Accepted: ThirdValue
+Acceptor 9003-->> Learner 9007:(4) Accepted: ThirdValue
+Acceptor 9003-->> Learner 9008:(4) Accepted: ThirdValue
+Acceptor 9003-->> Proposer 9002:(4) Accepted: ThirdValue
+Acceptor 9004-->> Learner 9007:(4) Accepted: ThirdValue
+Acceptor 9004-->> Learner 9008:(4) Accepted: ThirdValue
+Acceptor 9004-->> Proposer 9002:(4) Accepted: ThirdValue
+Proposer 9002-->> client: ThirdValue was accepted as the value!

@@ -1,14 +1,21 @@
 package network
 
 import (
+	"time"
+
 	roles "orchestra-paxos/internal/domain/roles"
+)
+
+var (
+	rtt         = 20 * time.Millisecond
+	OneWayDelay = rtt / 2
 )
 
 // NetworkMessage identify message in network between Paxos roles
 type NetworkMessage struct {
-	Stage  roles.Stage
-	Sender string
-	Data   interface{}
+	Stage      roles.Stage
+	SenderPort int
+	Data       interface{}
 }
 
 // MessageRequest identify Data in NetworkMessage for prepare state (client -> proposer) or in case of
@@ -40,5 +47,5 @@ type MessagePromise struct {
 type MessageAccept struct {
 	ProposalID     roles.HighestID
 	Value          string
-	ALiveAcceptors []string
+	ALiveAcceptors []int
 }

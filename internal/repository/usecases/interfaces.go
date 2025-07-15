@@ -5,9 +5,9 @@ import (
 )
 
 type AcceptorsStorage interface {
-	AddAcceptor(acceptor string, roundID roles.HighestID)
+	AddAcceptor(acceptor int, roundID roles.HighestID)
 	NumberOfAcceptorsAtRound(roundID roles.HighestID) int
-	AllAcceptorsAtRound(roundID roles.HighestID) []string
+	AllAcceptorsAtRound(roundID roles.HighestID) []int
 }
 
 type Timers interface {

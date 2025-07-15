@@ -6,6 +6,6 @@ import (
 
 type InitRoles interface {
 	Run(wg *sync.WaitGroup)
-	Name() string
-	UpdateListOfParticipantsOfTheRequiredRoles(participantsOfTheRequiredRoles []string)
+	Port() int
+	UpdateListOfParticipantsOfTheRequiredRoles(participantsOfTheRequiredRoles []int)
 }

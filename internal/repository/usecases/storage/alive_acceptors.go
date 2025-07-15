@@ -7,18 +7,18 @@ import (
 )
 
 type AliveAcceptors struct {
-	acceptors map[roles.HighestID][]string
+	acceptors map[roles.HighestID][]int
 	lock      *sync.Mutex
 }
 
 func NewAliveAcceptors() *AliveAcceptors {
 	return &AliveAcceptors{
-		acceptors: make(map[roles.HighestID][]string),
+		acceptors: make(map[roles.HighestID][]int),
 		lock:      &sync.Mutex{},
 	}
 }
 
-func (p *AliveAcceptors) AddAcceptor(acceptor string, roundID roles.HighestID) {
+func (p *AliveAcceptors) AddAcceptor(acceptor int, roundID roles.HighestID) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
@@ -32,7 +32,7 @@ func (p *AliveAcceptors) NumberOfAcceptorsAtRound(roundID roles.HighestID) int {
 	return len(p.acceptors[roundID])
 }
 
-func (p *AliveAcceptors) AllAcceptorsAtRound(roundID roles.HighestID) []string {
+func (p *AliveAcceptors) AllAcceptorsAtRound(roundID roles.HighestID) []int {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 

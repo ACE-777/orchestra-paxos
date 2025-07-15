@@ -8,6 +8,6 @@ import (
 
 // NetworkActions identify actions in network for all network's acceptor
 type NetworkActions interface {
-	Send(receiverID string, delay time.Duration, msg network.NetworkMessage)
-	Receive(receiverID string) network.NetworkMessage
+	Unmarshal(in interface{}, out interface{}) error
+	Send(receiverID int, delay time.Duration, msg *network.NetworkMessage)
 }

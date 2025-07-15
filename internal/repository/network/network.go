@@ -1,69 +1,60 @@
 package network
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"math/rand"
-	"sync"
+	"net"
 	"time"
 
 	network "orchestra-paxos/internal/domain/network"
 )
 
-const MessageBuffer = 1024
-
 type Network struct {
-	chans map[string]chan network.NetworkMessage
-	loss  uint64
-	lock  *sync.RWMutex
+	loss float32
 }
 
-func NewNetwork(loss uint64) *Network {
+func NewNetwork(loss float32) *Network {
 	return &Network{
-		chans: make(map[string]chan network.NetworkMessage),
-		loss:  loss,
-		lock:  &sync.RWMutex{},
+		loss: loss,
 	}
 }
 
-func (n *Network) getChannel(receiverID string) chan network.NetworkMessage {
-	n.lock.RLock()
-	channel, exists := n.chans[receiverID]
-	n.lock.RUnlock()
-
-	if exists {
-		return channel
+func (n *Network) Unmarshal(in interface{}, out interface{}) error {
+	if raw, err := json.Marshal(in); err != nil {
+		return err
+	} else {
+		return json.Unmarshal(raw, &out)
 	}
-
-	n.lock.Lock()
-	defer n.lock.Unlock()
-
-	if channel, exists = n.chans[receiverID]; exists {
-		return channel
-	}
-
-	newChannel := make(chan network.NetworkMessage, MessageBuffer)
-	n.chans[receiverID] = newChannel
-
-	return newChannel
 }
 
-func (n *Network) Send(receiverID string, delay time.Duration, message network.NetworkMessage) {
-	if delay != 0 {
-		time.Sleep(delay)
-	}
-
-	if rand.Uint64() <= n.loss {
-		//time.Sleep(time.Duration(n.loss) * time.Nanosecond)
-
+func (n *Network) Send(receiverID int, delay time.Duration, msg *network.NetworkMessage) {
+	if rand.Float32() < n.loss {
 		return
 	}
-	channel := n.getChannel(receiverID)
-	channel <- message
-}
 
-func (n *Network) Receive(receiverID string) network.NetworkMessage {
-	channel := n.getChannel(receiverID)
-	msg := <-channel
-	//close(channel)
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(msg); err != nil {
+		return
+	}
+	msgSize := len(buf.Bytes())
 
-	return msg
+	time.Sleep(network.OneWayDelay)
+
+	bandwidthBytesPerSec := 10_000_000 / 8 // = 1.25 MB/s = 1_250_000 bytes/sec
+	transferTime := time.Duration(float64(msgSize) / float64(bandwidthBytesPerSec) * float64(time.Second))
+
+	time.Sleep(transferTime)
+
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", receiverID), time.Duration(10)*time.Second)
+	if err != nil {
+		if _, ok := err.(net.Error); ok {
+			return
+		}
+	}
+
+	if err := json.NewEncoder(conn).Encode(msg); err != nil {
+		return
+	}
 }

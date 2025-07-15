@@ -7,23 +7,23 @@ import (
 )
 
 type AcceptedAcceptors struct {
-	acceptors map[roles.HighestID][]string
+	acceptors map[roles.HighestID][]int
 	lock      *sync.Mutex
 }
 
 func NewAcceptedAcceptors() *AcceptedAcceptors {
 	return &AcceptedAcceptors{
-		acceptors: make(map[roles.HighestID][]string),
+		acceptors: make(map[roles.HighestID][]int),
 		lock:      &sync.Mutex{},
 	}
 }
 
-func (p *AcceptedAcceptors) AddAcceptor(acceptor string, roundID roles.HighestID) {
+func (p *AcceptedAcceptors) AddAcceptor(acceptor int, roundID roles.HighestID) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
 	if _, ok := p.acceptors[roundID]; !ok {
-		p.acceptors[roundID] = []string{acceptor}
+		p.acceptors[roundID] = []int{acceptor}
 
 		return
 	}
@@ -38,7 +38,7 @@ func (p *AcceptedAcceptors) NumberOfAcceptorsAtRound(roundID roles.HighestID) in
 	return len(p.acceptors[roundID])
 }
 
-func (p *AcceptedAcceptors) AllAcceptorsAtRound(roundID roles.HighestID) []string {
+func (p *AcceptedAcceptors) AllAcceptorsAtRound(roundID roles.HighestID) []int {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 

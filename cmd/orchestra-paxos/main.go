@@ -22,37 +22,40 @@ func main() {
 		wgRolesInit sync.WaitGroup
 		//wg          sync.WaitGroup
 
-		learnerNum   = 3 // setup learners
-		acceptorNum  = 3 // setup acceptors
-		proposerNum  = 3 // setup proposers
-		learnersList = []string{}
-		acceptorList = []string{}
+		learnerNum  = [3]int{9006, 9007, 9008} // setup learners
+		acceptorNum = [3]int{9003, 9004, 9005} // setup acceptors
+		proposerNum = [3]int{9000, 9001, 9002} // setup proposers
+		//learnerNum   = [1]int{9006} // setup learners
+		//acceptorNum  = [1]int{9003} // setup acceptors
+		//proposerNum  = [1]int{9000} // setup proposers
+		learnersList = []int{}
+		acceptorList = []int{}
 
-		learners  = make([]interface_roles.InitRoles, learnerNum)
-		acceptors = make([]interface_roles.InitRoles, acceptorNum)
-		proposers = make([]interface_roles.InitRoles, proposerNum)
+		learners  = make([]interface_roles.InitRoles, len(learnerNum))
+		acceptors = make([]interface_roles.InitRoles, len(acceptorNum))
+		proposers = make([]interface_roles.InitRoles, len(proposerNum))
 	)
 
 	sequence_diagram.CreateNewFile("multi")
 
-	for i := range learnerNum {
+	for i, learnerPort := range learnerNum {
 		wgRolesInit.Add(1)
-		learners[i] = learner.NewLearner(0, roles.NodeID(i), network)
-		learnersList = append(learnersList, learners[i].Name())
+		learners[i] = learner.NewLearner(0, roles.NodeID(i), network, learnerPort)
+		learnersList = append(learnersList, learners[i].Port())
 		go learners[i].Run(&wgRolesInit)
 	}
 
-	for i := range acceptorNum {
+	for i, acceptorPort := range acceptorNum {
 		wgRolesInit.Add(1)
-		acceptors[i] = acceptor.NewAcceptor(0, roles.NodeID(i), network)
+		acceptors[i] = acceptor.NewAcceptor(0, roles.NodeID(i), network, acceptorPort)
 		acceptors[i].UpdateListOfParticipantsOfTheRequiredRoles(learnersList)
 		go acceptors[i].Run(&wgRolesInit)
-		acceptorList = append(acceptorList, acceptors[i].Name())
+		acceptorList = append(acceptorList, acceptors[i].Port())
 	}
 
-	for i := range proposerNum {
+	for i, proposerPort := range proposerNum {
 		wgRolesInit.Add(1)
-		proposers[i] = proposer.NewProposer(0, roles.NodeID(i), network)
+		proposers[i] = proposer.NewProposer(0, roles.NodeID(i), network, proposerPort)
 		proposers[i].UpdateListOfParticipantsOfTheRequiredRoles(acceptorList)
 		go proposers[i].Run(&wgRolesInit)
 	}
@@ -60,12 +63,12 @@ func main() {
 	wgRolesInit.Wait()
 
 	go func() {
-		sequence_diagram.WriteToFile(fmt.Sprintf("client ->> Proposer 0: Request: %v", "FirstValue"))
 		switch proposerFromList := proposers[0].(type) {
 		case *proposer.Proposer:
-			proposerFromList.Net.Send(proposerFromList.Name(), 0, network_domain.NetworkMessage{
-				Stage:  roles.REQUEST,
-				Sender: "client",
+			sequence_diagram.WriteToFile(fmt.Sprintf("client ->> Proposer %d: Request: %v", proposerFromList.Port(), "FirstValue"))
+			proposerFromList.Net.Send(proposerFromList.Port(), 0, &network_domain.NetworkMessage{
+				Stage:      roles.REQUEST,
+				SenderPort: 0,
 				Data: network_domain.MessageRequest{
 					Value: "FirstValue",
 				},
@@ -75,13 +78,29 @@ func main() {
 		}
 	}()
 
+	//go func() {
+	//	sequence_diagram.WriteToFile(fmt.Sprintf("client ->> Proposer 0: Request: %v", "FValue"))
+	//	switch proposerFromList := proposers[0].(type) {
+	//	case *proposer.Proposer:
+	//		proposerFromList.Net.Send(proposerFromList.Name(), 0, network_domain.NetworkMessage{
+	//			Stage:  roles.REQUEST,
+	//			Sender: "client",
+	//			Data: network_domain.MessageRequest{
+	//				Value: "FValue",
+	//			},
+	//		})
+	//	default:
+	//		fmt.Printf("Data is of unknown type: %T\n", proposerFromList)
+	//	}
+	//}()
+
 	go func() {
-		sequence_diagram.WriteToFile(fmt.Sprintf("client ->> Proposer 1: Request: %v", "SecondValue"))
 		switch proposerFromList := proposers[1].(type) {
 		case *proposer.Proposer:
-			proposerFromList.Net.Send(proposerFromList.Name(), 0, network_domain.NetworkMessage{
-				Stage:  roles.REQUEST,
-				Sender: "client",
+			sequence_diagram.WriteToFile(fmt.Sprintf("client ->> Proposer %d: Request: %v", proposerFromList.Port(), "SecondValue"))
+			proposerFromList.Net.Send(proposerFromList.Port(), 0, &network_domain.NetworkMessage{
+				Stage:      roles.REQUEST,
+				SenderPort: 0,
 				Data: network_domain.MessageRequest{
 					Value: "SecondValue",
 				},
@@ -92,12 +111,12 @@ func main() {
 	}()
 
 	go func() {
-		sequence_diagram.WriteToFile(fmt.Sprintf("client ->> Proposer 2: Request: %v", "ThirdValue"))
 		switch proposerFromList := proposers[2].(type) {
 		case *proposer.Proposer:
-			proposerFromList.Net.Send(proposerFromList.Name(), 0, network_domain.NetworkMessage{
-				Stage:  roles.REQUEST,
-				Sender: "client",
+			sequence_diagram.WriteToFile(fmt.Sprintf("client ->> Proposer %d: Request: %v", proposerFromList.Port(), "ThirdValue"))
+			proposerFromList.Net.Send(proposerFromList.Port(), 0, &network_domain.NetworkMessage{
+				Stage:      roles.REQUEST,
+				SenderPort: 0,
 				Data: network_domain.MessageRequest{
 					Value: "ThirdValue",
 				},
