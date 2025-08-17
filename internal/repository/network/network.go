@@ -47,7 +47,7 @@ func (n *Network) Send(receiverID int, delay time.Duration, msg *network.Network
 
 	time.Sleep(transferTime)
 
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", receiverID), time.Duration(10)*time.Second)
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", receiverID), time.Duration(1)*time.Second)
 	if err != nil {
 		if _, ok := err.(net.Error); ok {
 			return

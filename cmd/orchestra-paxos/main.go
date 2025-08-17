@@ -79,6 +79,22 @@ func main() {
 	}()
 
 	//go func() {
+	//	switch proposerFromList := proposers[0].(type) {
+	//	case *proposer.Proposer:
+	//		sequence_diagram.WriteToFile(fmt.Sprintf("client ->> Proposer %d: Request: %v", proposerFromList.Port(), "SecondValue"))
+	//		proposerFromList.Net.Send(proposerFromList.Port(), 0, &network_domain.NetworkMessage{
+	//			Stage:      roles.REQUEST,
+	//			SenderPort: 0,
+	//			Data: network_domain.MessageRequest{
+	//				Value: "SecondValue",
+	//			},
+	//		})
+	//	default:
+	//		fmt.Printf("Data is of unknown type: %T\n", proposerFromList)
+	//	}
+	//}()
+
+	//go func() {
 	//	sequence_diagram.WriteToFile(fmt.Sprintf("client ->> Proposer 0: Request: %v", "FValue"))
 	//	switch proposerFromList := proposers[0].(type) {
 	//	case *proposer.Proposer:
@@ -126,5 +142,5 @@ func main() {
 		}
 	}()
 
-	time.Sleep(20 * time.Second)
+	time.Sleep(60 * time.Second)
 }

@@ -63,16 +63,16 @@ func NewProposer(
 }
 
 func (p *Proposer) handleRequest(message *domain_network.NetworkMessage) {
-	p.lock.Lock()
-	p.HighestID++
-	roundID := p.HighestID
-	p.lock.Unlock()
-
 	msg := &domain_network.MessageRequest{}
 	if err := p.Net.Unmarshal(message.Data, msg); err != nil {
 		p.log(0, "can not unmarshal message")
 		return
 	}
+
+	p.lock.Lock()
+	p.HighestID++ // maybe increase on delta or not needed
+	roundID := p.HighestID
+	p.lock.Unlock()
 
 	p.valuesFromUser.AddValue(msg.Value, roundID)
 
@@ -144,27 +144,28 @@ func (p *Proposer) handleNack(message *domain_network.NetworkMessage) {
 	}
 	p.lock.Unlock()
 
-	p.logOfOperations.SetRestartStateOperation(msg.ProposalID)
-	source := rand.NewSource(time.Now().UnixNano())
-	r := rand.New(source)
-	randomTimeout := time.Duration(r.Intn(500)+1000) * time.Millisecond
-	p.log(msg.ProposalID, "Sleeping %d microseconds before restarting round", randomTimeout)
-	time.Sleep(randomTimeout)
-	p.handleRequest(&domain_network.NetworkMessage{
-		Stage:      domain_roles.REQUEST,
-		SenderPort: p.Port(),
-		Data: domain_network.MessageRequest{
-			Value:   p.valuesFromUser.ValueFromRound(msg.ProposalID),
-			Restart: "restart",
-		},
-	})
+	if p.logOfOperations.SetRestartStateOperation(msg.ProposalID) {
+		p.log(msg.ProposalID, "restart round")
+		source := rand.NewSource(time.Now().UnixNano())
+		r := rand.New(source)
+		randomTimeout := time.Duration(r.Intn(1000)+200) * time.Millisecond
+		p.log(msg.ProposalID, "Sleeping %d milliseconds before restarting round", randomTimeout.Milliseconds())
+		time.Sleep(randomTimeout)
 
-	p.log(msg.ProposalID, "restart round")
+		p.handleRequest(&domain_network.NetworkMessage{
+			Stage:      domain_roles.REQUEST,
+			SenderPort: p.Port(),
+			Data: domain_network.MessageRequest{
+				Value:   p.valuesFromUser.ValueFromRound(msg.ProposalID),
+				Restart: "restart",
+			},
+		})
+	}
 }
 
 func (p *Proposer) sendAccept(roundID domain_roles.HighestID, msg *domain_network.MessageRequest) {
 	go func(roundID domain_roles.HighestID) {
-		ticker := time.NewTicker(500 * time.Millisecond)
+		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
 		for {
 			select {
@@ -174,12 +175,14 @@ func (p *Proposer) sendAccept(roundID domain_roles.HighestID, msg *domain_networ
 						fmt.Sprintf("Note left of Proposer %d: round %d restarted", p.Port(), roundID),
 					)
 
+					p.log(roundID, "restart round")
+
 					return
 				}
 
 				p.timersOfCollectingPrepareFromAcceptors.SetExpireTimer(roundID)
 				//sequence_diagram.WriteToFile(fmt.Sprintf("participant client\n==%s==", "timer Prepare expired"))
-				sequence_diagram.WriteToFile(fmt.Sprintf("Note left of Proposer %d: %s", p.Port(), "timer Prepare expired"))
+				sequence_diagram.WriteToFile(fmt.Sprintf("Note left of Proposer %d: (%v)%s", p.Port(), roundID, "timer Prepare expired"))
 				p.log(roundID, "timer Prepare expired")
 
 				msgAccept := domain_network.MessageAccept{
@@ -219,7 +222,7 @@ func (p *Proposer) sendAccept(roundID domain_roles.HighestID, msg *domain_networ
 
 func (p *Proposer) waitAccept(roundID domain_roles.HighestID, msg *domain_network.MessageRequest) {
 	go func(roundID domain_roles.HighestID) {
-		ticker1 := time.NewTicker(500 * time.Millisecond)
+		ticker1 := time.NewTicker(100 * time.Millisecond)
 		defer ticker1.Stop()
 		for {
 			select {
@@ -233,34 +236,44 @@ func (p *Proposer) waitAccept(roundID domain_roles.HighestID, msg *domain_networ
 				p.timersOfCollectingAcceptFromAcceptors.SetExpireTimer(roundID)
 				p.log(roundID, "timer Accept expired")
 				//sequence_diagram.WriteToFile(fmt.Sprintf("participant client\n==%s==", "timer Accept expired"))
-				sequence_diagram.WriteToFile(fmt.Sprintf("Note left of Proposer %d: %s", p.Port(), "timer Accept expired"))
+				sequence_diagram.WriteToFile(fmt.Sprintf("Note left of Proposer %d: (%v)%s", p.Port(), roundID, "timer Accept expired"))
 				if p.acceptedAcceptors.NumberOfAcceptorsAtRound(roundID) > p.aliveAcceptors.NumberOfAcceptorsAtRound(roundID)/2 {
 					sequence_diagram.WriteToFile(fmt.Sprintf("Proposer %d-->> client: %s was accepted as the value!", p.Port(), p.valuesFromUser.ValueFromRound(roundID)))
 					p.log(roundID, "!!!!!  value %s was accepted, proposer %d ::: %d > %d", msg.Value, p.Port(), p.acceptedAcceptors.NumberOfAcceptorsAtRound(roundID), p.aliveAcceptors.NumberOfAcceptorsAtRound(roundID)/2)
 
 					return
+				} else {
+					p.log(roundID, "number: %v, alive: %v", p.acceptedAcceptors.NumberOfAcceptorsAtRound(roundID), p.aliveAcceptors.NumberOfAcceptorsAtRound(roundID)/2)
 				}
 
-				p.logOfOperations.SetRestartStateOperation(roundID)
-				source := rand.NewSource(time.Now().UnixNano())
-				r := rand.New(source)
-				randomTimeout := time.Duration(r.Intn(500)+1000) * time.Millisecond
-				p.log(roundID, "Sleeping %d microseconds before restarting round", randomTimeout)
-				time.Sleep(randomTimeout)
+				if p.logOfOperations.SetRestartStateOperation(roundID) {
+					p.log(roundID, "restart round")
+					source := rand.NewSource(time.Now().UnixNano())
+					r := rand.New(source)
+					randomTimeout := time.Duration(r.Intn(1000)+200) * time.Millisecond
+					p.log(roundID, "Sleeping %d milliseconds before restarting round", randomTimeout.Milliseconds())
+					time.Sleep(randomTimeout)
 
-				p.handleRequest(&domain_network.NetworkMessage{
-					Stage:      domain_roles.REQUEST,
-					SenderPort: p.Port(),
-					Data: domain_network.MessageRequest{
-						Value:   p.valuesFromUser.ValueFromRound(roundID),
-						Restart: "restart",
-					},
-				})
-
-				p.log(roundID, "restart round")
+					p.handleRequest(&domain_network.NetworkMessage{
+						Stage:      domain_roles.REQUEST,
+						SenderPort: p.Port(),
+						Data: domain_network.MessageRequest{
+							Value:   p.valuesFromUser.ValueFromRound(roundID),
+							Restart: "restart",
+						},
+					})
+				}
 
 				return
 			default:
+				if p.logOfOperations.CheckOperationOnRestartState(roundID) {
+					sequence_diagram.WriteToFile(fmt.Sprintf("Note left of Proposer %d: round %d restarted", p.Port(), roundID))
+
+					p.log(roundID, "restart round")
+
+					return
+				}
+
 				if p.acceptedAcceptors.NumberOfAcceptorsAtRound(roundID) > p.aliveAcceptors.NumberOfAcceptorsAtRound(roundID)/2 {
 					sequence_diagram.WriteToFile(fmt.Sprintf("Proposer %d-->> client: %s was accepted as the value!", p.Port(), p.valuesFromUser.ValueFromRound(roundID)))
 					p.log(roundID, "!!!!!  value %s was accepted, proposer %d ::: %d > %d", msg.Value, p.Port(), p.acceptedAcceptors.NumberOfAcceptorsAtRound(roundID), p.aliveAcceptors.NumberOfAcceptorsAtRound(roundID)/2)

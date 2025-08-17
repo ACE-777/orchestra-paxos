@@ -27,9 +27,15 @@ func (l *LogOfOperations) CheckOperationOnRestartState(operationID roles.Highest
 	return ok
 }
 
-func (l *LogOfOperations) SetRestartStateOperation(operationID roles.HighestID) {
+func (l *LogOfOperations) SetRestartStateOperation(operationID roles.HighestID) bool {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
-	l.logOfOperations[operationID] = struct{}{}
+	if _, ok := l.logOfOperations[operationID]; !ok {
+		l.logOfOperations[operationID] = struct{}{}
+
+		return true
+	}
+
+	return false
 }

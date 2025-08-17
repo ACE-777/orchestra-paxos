@@ -22,6 +22,12 @@ func (p *AliveAcceptors) AddAcceptor(acceptor int, roundID roles.HighestID) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
+	if _, ok := p.acceptors[roundID]; !ok {
+		p.acceptors[roundID] = []int{acceptor}
+
+		return
+	}
+
 	p.acceptors[roundID] = append(p.acceptors[roundID], acceptor)
 }
 
