@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"orchestra-paxos/internal/domain/network"
 	"sync"
 	"time"
 
+	"orchestra-paxos/internal/domain/network"
 	roles "orchestra-paxos/internal/domain/roles"
 )
 
@@ -15,11 +15,12 @@ func (p *Proposer) Run(wg *sync.WaitGroup) {
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", p.Port()))
 	if err != nil {
 		p.log(0, "Failed to connect to port: %d, error: %v", p.Port(), err)
+
 		return
 	}
 
 	p.log(0, "Init Proposer in group %d with ID %d on 127.0.0.1:%d", p.GroupID, p.NodeID, p.Port())
-	wg.Done()
+	wg.Done() //wg in defer?
 
 	go func() {
 		for {
@@ -39,13 +40,13 @@ func (p *Proposer) Run(wg *sync.WaitGroup) {
 
 			switch msg.Stage {
 			case roles.REQUEST:
-				p.handleRequest(msg)
+				go p.handleRequest(msg)
 			case roles.PROMISE:
-				p.handlePromise(msg)
+				go p.handlePromise(msg)
 			case roles.ACCEPTED:
-				p.handleAccepted(msg)
+				go p.handleAccepted(msg)
 			case roles.NACK:
-				p.handleNack(msg)
+				go p.handleNack(msg)
 			}
 		}
 	}()

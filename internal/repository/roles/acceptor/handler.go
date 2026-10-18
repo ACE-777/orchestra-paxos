@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"orchestra-paxos/internal/domain/network"
 	"sync"
 	"time"
 
+	"orchestra-paxos/internal/domain/network"
 	roles "orchestra-paxos/internal/domain/roles"
 )
 
@@ -39,9 +39,9 @@ func (a *Acceptor) Run(wg *sync.WaitGroup) {
 
 			switch msg.Stage {
 			case roles.PREPARE:
-				a.handlePrepare(msg)
+				go a.handlePrepare(msg)
 			case roles.ACCEPT:
-				a.handleAccept(msg)
+				go a.handleAccept(msg)
 			}
 		}
 	}()

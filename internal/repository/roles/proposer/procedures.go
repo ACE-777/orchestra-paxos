@@ -4,14 +4,12 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"strconv"
 	"sync"
 	"time"
 
 	domain_network "orchestra-paxos/internal/domain/network"
 	domain_roles "orchestra-paxos/internal/domain/roles"
 	network "orchestra-paxos/internal/repository/network"
-	sequence_diagram "orchestra-paxos/internal/repository/sequence_diagram"
 	interface_uc "orchestra-paxos/internal/repository/usecases"
 	operations_log_uc "orchestra-paxos/internal/repository/usecases/operations_log"
 	storage_uc "orchestra-paxos/internal/repository/usecases/storage"
@@ -19,7 +17,7 @@ import (
 	values_uc "orchestra-paxos/internal/repository/usecases/values"
 )
 
-// Proposer identify proposer role in Paxos
+// Proposer identify proposer role in Orchestra-Paxos
 type Proposer struct {
 	GroupID   domain_roles.GroupID   // group's ID of nodes
 	NodeID    domain_roles.NodeID    // Proposer's ID
@@ -32,6 +30,7 @@ type Proposer struct {
 	timersOfCollectingPrepareFromAcceptors interface_uc.Timers                // mark that timer expired in prepare stage
 	timersOfCollectingAcceptFromAcceptors  interface_uc.Timers                // mark that timer expired in prepare stage
 	valuesFromUser                         interface_uc.ValuesFromUsers       // values from user for each round
+	storage                                interface_uc.Storage               // storage for final accepted values
 
 	Net   network.NetworkActions // network
 	port  int                    // port of producer for tcp network
@@ -44,6 +43,7 @@ func NewProposer(
 	nodeID domain_roles.NodeID,
 	network network.NetworkActions,
 	port int,
+	storage interface_uc.Storage,
 ) *Proposer {
 	return &Proposer{
 		GroupID:                                groupID,
@@ -55,6 +55,7 @@ func NewProposer(
 		timersOfCollectingPrepareFromAcceptors: timers_uc.NewTimersOfCollectingPrepareFromAcceptors(),
 		timersOfCollectingAcceptFromAcceptors:  timers_uc.NewTimersOfCollectingAcceptFromAcceptors(),
 		valuesFromUser:                         values_uc.NewValuesFromUser(),
+		storage:                                storage,
 		Net:                                    network,
 		port:                                   port,
 		lock:                                   &sync.Mutex{},
@@ -66,13 +67,15 @@ func (p *Proposer) handleRequest(message *domain_network.NetworkMessage) {
 	msg := &domain_network.MessageRequest{}
 	if err := p.Net.Unmarshal(message.Data, msg); err != nil {
 		p.log(0, "can not unmarshal message")
+
 		return
 	}
 
 	p.lock.Lock()
-	p.HighestID++ // maybe increase on delta or not needed
+	p.HighestID++ // maybe increase on delta or not needed in first version
 	roundID := p.HighestID
 	p.lock.Unlock()
+	p.log(roundID, "handle request roundID: %v", roundID)
 
 	p.valuesFromUser.AddValue(msg.Value, roundID)
 
@@ -84,7 +87,7 @@ func (p *Proposer) handleRequest(message *domain_network.NetworkMessage) {
 				ProposalID: roundID,
 			},
 		})
-		sequence_diagram.WriteToFile(fmt.Sprintf("Proposer %d-->> Acceptor %s:(%d) Prepare", p.Port(), strconv.Itoa(acceptor), roundID))
+		// sequence_diagram.WriteToFile(fmt.Sprintf("Proposer %d-->> Acceptor %s:(%d) Prepare", p.Port(), strconv.Itoa(acceptor), roundID))
 	}
 
 	for acceptor := range p.Acceptors {
@@ -99,6 +102,7 @@ func (p *Proposer) handlePromise(message *domain_network.NetworkMessage) {
 	msg := &domain_network.MessagePromise{}
 	if err := p.Net.Unmarshal(message.Data, msg); err != nil {
 		p.log(0, "can not unmarshal message")
+
 		return
 	}
 
@@ -148,7 +152,7 @@ func (p *Proposer) handleNack(message *domain_network.NetworkMessage) {
 		p.log(msg.ProposalID, "restart round")
 		source := rand.NewSource(time.Now().UnixNano())
 		r := rand.New(source)
-		randomTimeout := time.Duration(r.Intn(1000)+200) * time.Millisecond
+		randomTimeout := time.Duration(r.Intn(5000)+15000) * time.Millisecond
 		p.log(msg.ProposalID, "Sleeping %d milliseconds before restarting round", randomTimeout.Milliseconds())
 		time.Sleep(randomTimeout)
 
@@ -171,9 +175,9 @@ func (p *Proposer) sendAccept(roundID domain_roles.HighestID, msg *domain_networ
 			select {
 			case <-ticker.C:
 				if p.logOfOperations.CheckOperationOnRestartState(roundID) {
-					sequence_diagram.WriteToFile(
-						fmt.Sprintf("Note left of Proposer %d: round %d restarted", p.Port(), roundID),
-					)
+					// sequence_diagram.WriteToFile(
+					// 	fmt.Sprintf("Note left of Proposer %d: round %d restarted", p.Port(), roundID),
+					// )
 
 					p.log(roundID, "restart round")
 
@@ -182,7 +186,7 @@ func (p *Proposer) sendAccept(roundID domain_roles.HighestID, msg *domain_networ
 
 				p.timersOfCollectingPrepareFromAcceptors.SetExpireTimer(roundID)
 				//sequence_diagram.WriteToFile(fmt.Sprintf("participant client\n==%s==", "timer Prepare expired"))
-				sequence_diagram.WriteToFile(fmt.Sprintf("Note left of Proposer %d: (%v)%s", p.Port(), roundID, "timer Prepare expired"))
+				// sequence_diagram.WriteToFile(fmt.Sprintf("Note left of Proposer %d: (%v)%s", p.Port(), roundID, "timer Prepare expired"))
 				p.log(roundID, "timer Prepare expired")
 
 				msgAccept := domain_network.MessageAccept{
@@ -197,11 +201,33 @@ func (p *Proposer) sendAccept(roundID domain_roles.HighestID, msg *domain_networ
 						SenderPort: p.Port(),
 						Data:       msgAccept,
 					})
-					sequence_diagram.WriteToFile(fmt.Sprintf("Proposer %d-->> Acceptor %s:(%d) Accept: %s", p.Port(), strconv.Itoa(acceptor), roundID, p.valuesFromUser.ValueFromRound(roundID)))
+					// sequence_diagram.WriteToFile(fmt.Sprintf("Proposer %d-->> Acceptor %s:(%d) Accept: %s", p.Port(), strconv.Itoa(acceptor), roundID, p.valuesFromUser.ValueFromRound(roundID)))
 				}
 
 				for _, acceptor := range p.aliveAcceptors.AllAcceptorsAtRound(roundID) {
 					p.log(roundID, "proposer %d send ACCEPT to acceptor %d", p.Port(), acceptor)
+				}
+
+				if len(p.aliveAcceptors.AllAcceptorsAtRound(roundID)) == 0 {
+					if p.logOfOperations.SetRestartStateOperation(roundID) {
+						p.log(roundID, "restart round")
+						source := rand.NewSource(time.Now().UnixNano())
+						r := rand.New(source)
+						randomTimeout := time.Duration(r.Intn(5000)+15000) * time.Millisecond
+						p.log(roundID, "Sleeping %d milliseconds before restarting round", randomTimeout.Milliseconds())
+						time.Sleep(randomTimeout)
+
+						p.handleRequest(&domain_network.NetworkMessage{
+							Stage:      domain_roles.REQUEST,
+							SenderPort: p.Port(),
+							Data: domain_network.MessageRequest{
+								Value:   p.valuesFromUser.ValueFromRound(roundID),
+								Restart: "restart",
+							},
+						})
+					}
+
+					return
 				}
 
 				p.waitAccept(roundID, msg)
@@ -209,7 +235,7 @@ func (p *Proposer) sendAccept(roundID domain_roles.HighestID, msg *domain_networ
 				return
 			default:
 				if p.logOfOperations.CheckOperationOnRestartState(roundID) {
-					sequence_diagram.WriteToFile(fmt.Sprintf("Note left of Proposer %d: round %d restarted", p.Port(), roundID))
+					// sequence_diagram.WriteToFile(fmt.Sprintf("Note left of Proposer %d: round %d restarted", p.Port(), roundID))
 
 					return
 				}
@@ -228,7 +254,7 @@ func (p *Proposer) waitAccept(roundID domain_roles.HighestID, msg *domain_networ
 			select {
 			case <-ticker1.C:
 				if p.logOfOperations.CheckOperationOnRestartState(roundID) {
-					sequence_diagram.WriteToFile(fmt.Sprintf("Note left of Proposer %d: round %d restarted", p.Port(), roundID))
+					// sequence_diagram.WriteToFile(fmt.Sprintf("Note left of Proposer %d: round %d restarted", p.Port(), roundID))
 
 					return
 				}
@@ -236,10 +262,11 @@ func (p *Proposer) waitAccept(roundID domain_roles.HighestID, msg *domain_networ
 				p.timersOfCollectingAcceptFromAcceptors.SetExpireTimer(roundID)
 				p.log(roundID, "timer Accept expired")
 				//sequence_diagram.WriteToFile(fmt.Sprintf("participant client\n==%s==", "timer Accept expired"))
-				sequence_diagram.WriteToFile(fmt.Sprintf("Note left of Proposer %d: (%v)%s", p.Port(), roundID, "timer Accept expired"))
+				// sequence_diagram.WriteToFile(fmt.Sprintf("Note left of Proposer %d: (%v)%s", p.Port(), roundID, "timer Accept expired"))
 				if p.acceptedAcceptors.NumberOfAcceptorsAtRound(roundID) > p.aliveAcceptors.NumberOfAcceptorsAtRound(roundID)/2 {
-					sequence_diagram.WriteToFile(fmt.Sprintf("Proposer %d-->> client: %s was accepted as the value!", p.Port(), p.valuesFromUser.ValueFromRound(roundID)))
-					p.log(roundID, "!!!!!  value %s was accepted, proposer %d ::: %d > %d", msg.Value, p.Port(), p.acceptedAcceptors.NumberOfAcceptorsAtRound(roundID), p.aliveAcceptors.NumberOfAcceptorsAtRound(roundID)/2)
+					// sequence_diagram.WriteToFile(fmt.Sprintf("Proposer %d-->> client: %s was accepted as the value!", p.Port(), p.valuesFromUser.ValueFromRound(roundID)))
+					p.log(roundID, "!!!!!  value %s was accepted, proposer %d ::: accepted acceptors=%d > alive acceptors=%d(qourom /2)", msg.Value, p.Port(), p.acceptedAcceptors.NumberOfAcceptorsAtRound(roundID), p.aliveAcceptors.NumberOfAcceptorsAtRound(roundID)/2)
+					p.storage.AddResult(msg.Value, roundID)
 
 					return
 				} else {
@@ -250,7 +277,7 @@ func (p *Proposer) waitAccept(roundID domain_roles.HighestID, msg *domain_networ
 					p.log(roundID, "restart round")
 					source := rand.NewSource(time.Now().UnixNano())
 					r := rand.New(source)
-					randomTimeout := time.Duration(r.Intn(1000)+200) * time.Millisecond
+					randomTimeout := time.Duration(r.Intn(5000)+15000) * time.Millisecond
 					p.log(roundID, "Sleeping %d milliseconds before restarting round", randomTimeout.Milliseconds())
 					time.Sleep(randomTimeout)
 
@@ -267,7 +294,7 @@ func (p *Proposer) waitAccept(roundID domain_roles.HighestID, msg *domain_networ
 				return
 			default:
 				if p.logOfOperations.CheckOperationOnRestartState(roundID) {
-					sequence_diagram.WriteToFile(fmt.Sprintf("Note left of Proposer %d: round %d restarted", p.Port(), roundID))
+					// sequence_diagram.WriteToFile(fmt.Sprintf("Note left of Proposer %d: round %d restarted", p.Port(), roundID))
 
 					p.log(roundID, "restart round")
 
@@ -275,8 +302,9 @@ func (p *Proposer) waitAccept(roundID domain_roles.HighestID, msg *domain_networ
 				}
 
 				if p.acceptedAcceptors.NumberOfAcceptorsAtRound(roundID) > p.aliveAcceptors.NumberOfAcceptorsAtRound(roundID)/2 {
-					sequence_diagram.WriteToFile(fmt.Sprintf("Proposer %d-->> client: %s was accepted as the value!", p.Port(), p.valuesFromUser.ValueFromRound(roundID)))
-					p.log(roundID, "!!!!!  value %s was accepted, proposer %d ::: %d > %d", msg.Value, p.Port(), p.acceptedAcceptors.NumberOfAcceptorsAtRound(roundID), p.aliveAcceptors.NumberOfAcceptorsAtRound(roundID)/2)
+					// sequence_diagram.WriteToFile(fmt.Sprintf("Proposer %d-->> client: %s was accepted as the value!", p.Port(), p.valuesFromUser.ValueFromRound(roundID)))
+					p.log(roundID, "!!!!!  value %s was accepted, proposer %d ::: accepted acceptors=%d > alive acceptors=%d (quorom /2)", msg.Value, p.Port(), p.acceptedAcceptors.NumberOfAcceptorsAtRound(roundID), p.aliveAcceptors.NumberOfAcceptorsAtRound(roundID))
+					p.storage.AddResult(msg.Value, roundID)
 
 					return
 				}

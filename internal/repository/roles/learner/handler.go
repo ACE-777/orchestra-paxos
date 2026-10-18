@@ -39,7 +39,7 @@ func (l *Learner) Run(wg *sync.WaitGroup) {
 
 			switch msg.Stage {
 			case roles.ACCEPTED:
-				l.handleAccepted(msg)
+				go l.handleAccepted(msg)
 			}
 		}
 	}()

@@ -11,7 +11,7 @@ var (
 	OneWayDelay = rtt / 2
 )
 
-// NetworkMessage identify message in network between Paxos roles
+// NetworkMessage identify message in network between Orchestra-Paxos roles
 type NetworkMessage struct {
 	Stage      roles.Stage
 	SenderPort int

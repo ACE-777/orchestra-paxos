@@ -3,13 +3,11 @@ package acceptor
 import (
 	"fmt"
 	"log"
-	"strconv"
 	"sync"
 
 	domain_network "orchestra-paxos/internal/domain/network"
 	domain_roles "orchestra-paxos/internal/domain/roles"
 	network "orchestra-paxos/internal/repository/network"
-	sequence_diagram "orchestra-paxos/internal/repository/sequence_diagram"
 )
 
 type Acceptor struct {
@@ -45,6 +43,7 @@ func (a *Acceptor) handlePrepare(message *domain_network.NetworkMessage) {
 	msg := &domain_network.MessagePrepare{}
 	if err := a.Net.Unmarshal(message.Data, msg); err != nil {
 		a.log(0, "can not unmarshal message")
+
 		return
 	}
 
@@ -57,7 +56,7 @@ func (a *Acceptor) handlePrepare(message *domain_network.NetworkMessage) {
 				AcceptorID: a.HighestID,
 			},
 		})
-		sequence_diagram.WriteToFile(fmt.Sprintf("Acceptor %d--x Proposer %s:(%d) Nack", a.Port(), strconv.Itoa(message.SenderPort), a.HighestID))
+		// sequence_diagram.WriteToFile(fmt.Sprintf("Acceptor %d--x Proposer %s:(%d) Nack", a.Port(), strconv.Itoa(message.SenderPort), a.HighestID))
 
 		a.log(a.HighestID, "acceptor %d send NACK to proposer %d", a.Port(), message.SenderPort)
 
@@ -79,7 +78,7 @@ func (a *Acceptor) handlePrepare(message *domain_network.NetworkMessage) {
 			Value:      promise.Value,
 		},
 	})
-	sequence_diagram.WriteToFile(fmt.Sprintf("Acceptor %d-->> Proposer %s:(%d) Promise", a.Port(), strconv.Itoa(message.SenderPort), a.HighestID))
+	// sequence_diagram.WriteToFile(fmt.Sprintf("Acceptor %d-->> Proposer %s:(%d) Promise", a.Port(), strconv.Itoa(message.SenderPort), a.HighestID))
 
 	a.log(msg.ProposalID, "acceptor %d send PROMISE to proposer %d", a.Port(), message.SenderPort)
 }
@@ -100,7 +99,7 @@ func (a *Acceptor) handleAccept(message *domain_network.NetworkMessage) {
 				AcceptorID: a.HighestID,
 			},
 		})
-		sequence_diagram.WriteToFile(fmt.Sprintf("Acceptor %d--x Proposer %s:(%d) Nack", a.Port(), strconv.Itoa(message.SenderPort), a.HighestID))
+		// sequence_diagram.WriteToFile(fmt.Sprintf("Acceptor %d--x Proposer %s:(%d) Nack", a.Port(), strconv.Itoa(message.SenderPort), a.HighestID))
 
 		a.log(a.HighestID, "acceptor %d send NACK to proposer %d", a.Port(), message.SenderPort)
 
@@ -117,14 +116,14 @@ func (a *Acceptor) handleAccept(message *domain_network.NetworkMessage) {
 				ALiveAcceptors: msg.ALiveAcceptors,
 			},
 		})
-		sequence_diagram.WriteToFile(fmt.Sprintf("Acceptor %d-->> Learner %s:(%d) Accepted: %s", a.Port(), strconv.Itoa(learner), a.HighestID, msg.Value))
+		// sequence_diagram.WriteToFile(fmt.Sprintf("Acceptor %d-->> Learner %s:(%d) Accepted: %s", a.Port(), strconv.Itoa(learner), a.HighestID, msg.Value))
 	}
 
 	for learner := range a.Learners {
 		a.log(a.HighestID, "acceptor %d send ACCEPTED to learner %d", a.Port(), learner)
 	}
 
-	sequence_diagram.WriteToFile(fmt.Sprintf("Acceptor %d-->> Proposer %s:(%d) Accepted: %s", a.Port(), strconv.Itoa(message.SenderPort), a.HighestID, msg.Value))
+	// sequence_diagram.WriteToFile(fmt.Sprintf("Acceptor %d-->> Proposer %s:(%d) Accepted: %s", a.Port(), strconv.Itoa(message.SenderPort), a.HighestID, msg.Value))
 	a.Net.Send(message.SenderPort, 0, &domain_network.NetworkMessage{
 		Stage:      domain_roles.ACCEPTED,
 		SenderPort: a.Port(),

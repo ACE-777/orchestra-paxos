@@ -24,6 +24,7 @@ func WriteToFile(text string) {
 		//fmt.Printf("Can't write error: %v", err)
 		return
 	}
+
 	defer file.Close()
 	//mu.Lock()
 	_, err = file.WriteString(fmt.Sprintf("%s\n", text))

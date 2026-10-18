@@ -20,3 +20,8 @@ type ValuesFromUsers interface {
 	AddValue(value string, operationID roles.HighestID)
 	ValueFromRound(operationID roles.HighestID) string
 }
+
+type Storage interface {
+	AddResult(value string, operationID roles.HighestID)
+	CheckResult() uint64
+}

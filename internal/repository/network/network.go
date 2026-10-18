@@ -12,7 +12,7 @@ import (
 )
 
 type Network struct {
-	loss float32
+	loss float32 // probability of message loss
 }
 
 func NewNetwork(loss float32) *Network {
@@ -30,8 +30,10 @@ func (n *Network) Unmarshal(in interface{}, out interface{}) error {
 }
 
 func (n *Network) Send(receiverID int, delay time.Duration, msg *network.NetworkMessage) {
-	if rand.Float32() < n.loss {
-		return
+	if delay != 1 {
+		if rand.Float32() < n.loss {
+			return
+		}
 	}
 
 	var buf bytes.Buffer
@@ -45,7 +47,7 @@ func (n *Network) Send(receiverID int, delay time.Duration, msg *network.Network
 	bandwidthBytesPerSec := 10_000_000 / 8 // = 1.25 MB/s = 1_250_000 bytes/sec
 	transferTime := time.Duration(float64(msgSize) / float64(bandwidthBytesPerSec) * float64(time.Second))
 
-	time.Sleep(transferTime)
+	time.Sleep(transferTime) //simulate message transferrnig
 
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", receiverID), time.Duration(1)*time.Second)
 	if err != nil {
